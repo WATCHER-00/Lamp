@@ -331,7 +331,7 @@
           var nodesToReplace = [];
           var n;
           while (n = walker.nextNode()) {
-            if (n.nodeValue.match(/toloka\.to|mazepa/i)) {
+            if (n.nodeValue.match(/toloka\.to|toloka|mazepa/i)) {
                nodesToReplace.push(n);
             }
           }
@@ -340,12 +340,13 @@
             if (node.parentNode && node.parentNode.classList && node.parentNode.classList.contains('ts-tracker-name')) return;
 
             var fragment = document.createDocumentFragment();
-            // Split by words, keeping the matched word in the array
-            var parts = node.nodeValue.split(/(toloka\.to|mazepa)/i);
+            // Split by words, keeping the matched word in the array. 
+            // Important: toloka\.to must be before toloka in regex to match the longer string first
+            var parts = node.nodeValue.split(/(toloka\.to|toloka|mazepa)/i);
 
             parts.forEach(function(part) {
                var lowerPart = part.toLowerCase();
-               if (lowerPart === 'toloka.to') {
+               if (lowerPart === 'toloka.to' || lowerPart === 'toloka') {
                   var s = document.createElement('span');
                   s.className = 'ts-tracker-name';
                   s.style.color = '#2ecc71'; // Green
