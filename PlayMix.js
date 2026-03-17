@@ -1,8 +1,8 @@
 (function() {
     'use strict';
 
-    const PLUGIN_NAME = 'Lampa PotPlayer Mix';
-    const PLUGIN_VERSION = '1.3';
+    const PLUGIN_NAME = 'Lampa PotPlayer Mix (Auto Low Audio)';
+    const PLUGIN_VERSION = '1.7';
 
     let pluginLogs = [];
     let pendingAction = null;
@@ -28,11 +28,83 @@
         return fixedUrl;
     }
 
-    // Збереження аудіо в пам'ять Lampa
+    // НОВА ФУНКЦІЯ: Автоматично знаходить посилання на найменшу якість (для аудіо)
+    function fetchLowestQuality(originalUrl, callback) {
+        if (!originalUrl || typeof originalUrl !== 'string' || originalUrl.indexOf('.m3u8') === -1) {
+            return callback(originalUrl);
+        }
+        
+        let requestUrl = originalUrl;
+        if (requestUrl.includes('|')) requestUrl = requestUrl.split('|')[0];
+        else if (requestUrl.includes('%7C')) requestUrl = requestUrl.split('%7C')[0];
+
+        $.ajax({
+            url: requestUrl,
+            type: 'GET',
+            dataType: 'text',
+            timeout: 5000,
+            success: function(data) {
+                let lines = data.split('\n');
+                let streams = [];
+                
+                for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].indexOf('#EXT-X-STREAM-INF') !== -1) {
+                        // Шукаємо висоту відео (наприклад 541 з RESOLUTION=960x541)
+                        let resMatch = lines[i].match(/RESOLUTION=\d+x(\d+)/);
+                        // Запасний варіант: шукаємо пропускну здатність, якщо резолюція не вказана
+                        let bwMatch = lines[i].match(/BANDWIDTH=(\d+)/);
+                        
+                        let score = 9999999;
+                        if (resMatch) {
+                            score = parseInt(resMatch[1], 10);
+                        } else if (bwMatch) {
+                            score = parseInt(bwMatch[1], 10);
+                        }
+
+                        let streamUrl = lines[i + 1] ? lines[i + 1].trim() : '';
+                        
+                        if (streamUrl && !streamUrl.startsWith('http')) {
+                            try {
+                                let urlObj = new URL(requestUrl);
+                                let baseUrl = requestUrl.substring(0, requestUrl.lastIndexOf('/') + 1);
+                                if (streamUrl.startsWith('/')) {
+                                    streamUrl = urlObj.origin + streamUrl; 
+                                } else {
+                                    streamUrl = baseUrl + streamUrl; 
+                                }
+                            } catch(e) {
+                                log('Помилка парсингу URL', e);
+                            }
+                        }
+                        
+                        if (streamUrl) {
+                            streams.push({ url: streamUrl, score: score });
+                        }
+                    }
+                }
+
+                if (streams.length > 0) {
+                    // Сортуємо від найменшої якості (найменшого score) до найбільшої
+                    streams.sort((a, b) => a.score - b.score);
+                    // Повертаємо найперше (найменше) посилання
+                    callback(streams[0].url);
+                } else {
+                    callback(originalUrl); 
+                }
+            },
+            error: function(jqXHR, textStatus) {
+                log('Помилка читання m3u8: ' + textStatus);
+                callback(originalUrl);
+            }
+        });
+    }
+
+    // Збереження аудіо в пам'ять Lampa з таймером
     function saveAudioUrl(url) {
         try {
             Lampa.Storage.set('potplayer_mix_audio_url', url);
-            showNotify('🎵 Аудіо-посилання збережено в пам\'ять Lampa!');
+            Lampa.Storage.set('potplayer_mix_audio_time', Date.now()); // Фіксуємо час збереження
+            showNotify('🎵 Аудіо збережено!');
             log('Аудіо збережено у Storage', url);
             return true;
         } catch(e) {
@@ -42,13 +114,21 @@
         }
     }
 
-    // Запуск відео з аудіо-треком
+    // Запуск відео з аудіо-треком (ОРИГІНАЛЬНИЙ)
     function playMixedVideo(videoUrl) {
         try {
             let audioUrl = Lampa.Storage.get('potplayer_mix_audio_url');
+            let audioTime = Lampa.Storage.get('potplayer_mix_audio_time');
             
-            if (!audioUrl || !audioUrl.match(/^https?:/)) {
-                showNotify('У пам\'яті немає збереженого аудіо! Спочатку натисніть "Запам\'ятати як аудіо".');
+            if (audioUrl) {
+                let timeElapsed = Date.now() - (audioTime || 0);
+                if (timeElapsed > 600000) { // 10 хвилин = 600000 мс
+                    showNotify('⏳ Час дії збереженого аудіо (10 хв) минув! Збережіть його знову.');
+                    Lampa.Storage.set('potplayer_mix_audio_url', '');
+                    return;
+                }
+            } else {
+                showNotify('У пам\'яті немає збереженого аудіо! Натисніть "Запам\'ятати як аудіо".');
                 return;
             }
 
@@ -58,20 +138,13 @@
             log('Відео URL:', videoUrl);
             log('Аудіо URL:', audioUrl);
 
-            // 1. Об'єднуємо посилання через |
             let combinedString = videoUrl + "|" + audioUrl;
-            
-            // 2. Кодуємо весь рядок, щоб Windows не "з'їла" спецсимволи (&, =, ?)
             let safeString = encodeURIComponent(combinedString);
-
-            // 3. Формуємо безпечне посилання для нашого скрипта (реєстру)
             let playerUrl = `potplayer://${safeString}`;
 
             showNotify('▶️ Запуск PotPlayer Mix...');
             
-            // Очищаємо аудіо після запуску, щоб уникнути плутанини в майбутньому
-            Lampa.Storage.set('potplayer_mix_audio_url', '');
-
+            // Не видаляємо аудіо, щоб можна було відкрити відео кілька разів протягом 10 хвилин
             window.location.href = playerUrl;
 
         } catch(e) {
@@ -80,7 +153,7 @@
         }
     }
 
-    // Симуляція натискання на файл для отримання його посилання
+    // Симуляція натискання
     function setActionAndClick(actionType) {
         log('Підготовка до перехоплення. Дія: ' + actionType);
         
@@ -94,7 +167,6 @@
             }
         }, 30000);
 
-        // Закриваємо меню дій, щоб фокус повернувся на список серій/файлів
         Lampa.Controller.toggle('content');
 
         setTimeout(function() {
@@ -137,8 +209,12 @@
                         }, 50);
 
                         if (action === 'save_audio') {
-                            saveAudioUrl(fixUrl(url));
+                            // Автоматично шукаємо найменшу якість перед збереженням
+                            fetchLowestQuality(url, function(lowestUrl) {
+                                saveAudioUrl(fixUrl(lowestUrl));
+                            });
                         } else if (action === 'play_mix') {
+                            // Відтворення Mix без парсингу якості відео (як в оригіналі)
                             playMixedVideo(url);
                         }
                     } else {
@@ -146,8 +222,7 @@
                         originalPlayerPlay.call(this, playerData);
                     }
                 } else {
-                    // Стандартний запуск Lampa, якщо просто натиснули "ОК" на файлі
-                    // ТАКОЖ тут ми додамо перехоплення на звичайний potplayer://, якщо ви хочете дивитись і звичайні фільми через PotPlayer
+                    // Стандартний запуск Lampa (як в оригіналі)
                     if(Lampa.Storage.get('player') === 'potplayer'){
                          let url = playerData.url || playerData.stream_url || playerData.link || playerData.file;
                          if (url) {
@@ -162,7 +237,7 @@
             Lampa.Player._potMixHooked = true;
         }
 
-        // ДОДАВАННЯ КНОПОК У МЕНЮ "ДІЯ"
+        // ДОДАВАННЯ КНОПОК
         if (Lampa.Select && !Lampa.Select._potMixMenuHooked) {
             const originalSelectShow = Lampa.Select.show;
 
