@@ -14,9 +14,6 @@
   <polyline points="12 6 12 12 16 14"/>
 </svg>`;
 
-
-
-
     if (!document.getElementById(STYLE_ID)) {
       $('body').append(
         `<div id="${STYLE_ID}"><style>
@@ -25,7 +22,7 @@
       );
     }
 
-    let mode = Number(Lampa.Storage.get('time2endMode') || 0);
+    let mode = Number(Lampa.Storage.get('time2endMode') || 0) % 2;
     let intervalId = null;
     let originalEndEl = null;
     let finishEl = null;
@@ -39,16 +36,20 @@
 
     function modeText(m) {
       if (m === 0) return 'Оригінальний вигляд';
-      if (m === 1) return 'Повний час / час завершення';
-      if (m === 2) return 'Залишок часу';
+      if (m === 1) return 'Залишок часу / час завершення';
       return '';
     }
 
     function timeToSec(str) {
       if (!str || str.indexOf(':') === -1) return 0;
       const p = str.split(':');
-      const h = +p[0] || 0, m = +p[1] || 0, s = +p[2] || 0;
-      return h * 3600 + m * 60 + s;
+      if (p.length === 2) {
+        return (+p[0] || 0) * 60 + (+p[1] || 0);
+      }
+      if (p.length === 3) {
+        return (+p[0] || 0) * 3600 + (+p[1] || 0) * 60 + (+p[2] || 0);
+      }
+      return 0;
     }
 
     function pad2(n) {
@@ -56,12 +57,15 @@
       return t.replace('NaN', '00');
     }
 
-    function formatHMS(sec) {
+    function formatHMS(sec, showHours) {
       if (sec < 0) sec = 0;
       const h = Math.floor(sec / 3600);
       const m = Math.floor((sec % 3600) / 60);
       const s = sec % 60;
-      return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
+      if (showHours || h > 0) {
+        return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
+      }
+      return `${pad2(m)}:${pad2(s)}`;
     }
 
     function formatClock(d) {
@@ -80,7 +84,7 @@
       btn.insertBefore($('.player-panel__quality'));
 
       btn.on('hover:enter', function () {
-        mode = (mode + 1) % 3;
+        mode = (mode + 1) % 2;
         Lampa.Storage.set('time2endMode', mode);
         notify(modeText(mode));
       });
@@ -125,7 +129,7 @@
         const nowStr = (nowEl.textContent || nowEl.innerText || '').trim();
         const endStr = (endEl.textContent || endEl.innerText || '').trim();
 
-        if (endStr === '00:00:00') {
+        if (endStr === '00:00:00' || endStr === '00:00' || !endStr) {
           finishEl.textContent = 'Очікуємо завантаження...';
           return;
         }
@@ -137,11 +141,10 @@
 
         if (mode === 0) {
           finishEl.textContent = endStr;
-        } else if (mode === 1) {
-          const finish = new Date(Date.now() + remaining * 1000);
-          finishEl.textContent = `${endStr} / ${formatClock(finish)}`;
         } else {
-          finishEl.textContent = `До завершення ${formatHMS(remaining)}`;
+          const finish = new Date(Date.now() + remaining * 1000);
+          const hasHours = endStr.split(':').length === 3;
+          finishEl.textContent = `${formatHMS(remaining, hasHours)} / ${formatClock(finish)}`;
         }
       }
 
