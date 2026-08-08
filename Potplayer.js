@@ -7,7 +7,7 @@
     const PLAYERS = {
         potplayer: {
             name: 'PotPlayer',
-            icon: '▶️',
+            icon: '🔵',
             protocol: 'potplayer://'
         }
     };
