@@ -263,7 +263,7 @@
                         });
 
                         params.items.push({
-                            title: '▶️ Відтворити Mix (PotPlayer)',
+                            title: '🔀 Відтворити Mix',
                             pot_mix_item: true,
                             onSelect: function() {
                                 setActionAndClick('play_mix');
