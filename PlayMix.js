@@ -142,7 +142,7 @@
             let safeString = encodeURIComponent(combinedString);
             let playerUrl = `potplayer://${safeString}`;
 
-            showNotify('▶️ Запуск PotPlayer Mix...');
+            showNotify('🔀 Запуск PotPlayer Mix...');
             
             // Не видаляємо аудіо, щоб можна було відкрити відео кілька разів протягом 10 хвилин
             window.location.href = playerUrl;
